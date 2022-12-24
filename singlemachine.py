@@ -40,12 +40,12 @@ def drawGantt(res):
     plt.subplot(2, 1, 1)
     plt.barh(y = [str(x[3]) for x in res], width = [x[1] for x in res], left= [x[0] for x in res])
     plt.title("Solution plot GANTT")
-    plt.xlim([min([x[0] for x in aux_res]), max([max(res[i-1][0] + res[i-1][1], res[i][0]) + x[1] for x in aux_res])])
+    plt.xticks(np.arange(min([x[0] for x in aux_res]), max([max(res[i-1][0] + res[i-1][1], res[i][0]) + x[1] for x in aux_res]) + 1, 1))
     plt.subplot(2, 1, 2)
     plt.barh(y = [str(x[3]) for x in aux_res], width = [x[1] for x in aux_res], left= [x[0] for x in aux_res])
     plt.xlim([min([x[0] for x in aux_res]), max([max(res[i-1][0] + res[i-1][1], res[i][0]) + x[1] for x in aux_res])])
     plt.title("Data plot GANTT")
-    plt.show()
+    plt.show(block = False)
 
 def schedule(data):
     """
@@ -68,7 +68,8 @@ def getScore(sol):
     score = s[0][2] - (s[0][0] + s[0][1])
     for i in range(1, len(s)):
         s[i] = (max(s[i-1][0] + s[i-1][1], s[i][0]), s[i][1], s[i][2], s[i][3])
-        score += s[i][2] - (s[i][0] + s[i][1])
+        # score += s[i][2] - (s[i][0] + s[i][1])
+        score = min(score, s[i][2] - (s[i][0] + s[i][1]))
     print(s)
     return score
 
@@ -96,7 +97,7 @@ def heurisitc(sol, data, objective_function):
             stops.pop(0)
             # stop >= rj where new jobs are avaiable
             available_jobs = list(filter(lambda x : x.r <= stop, remaining_jobs))
-            available_jobs = sorted(available_jobs, key= lambda x : x.d)
+            available_jobs = sorted(available_jobs, key= lambda x : x.p / x.d)
             # print("Available jobs {}, Stop {}, stops {}".format(available_jobs, stop, stops))
             if (len(available_jobs) == 0):
                 print("Machine is waiting")
@@ -118,6 +119,7 @@ def heurisitc(sol, data, objective_function):
             stops = sorted(list(set(stops)))
         # remaining_jobs = list(filter(lambda x : x.remaining_time != 0, remaining_jobs))
     # print(sol)
+    # drawGantt([(job.r, job.p, job.d, job.id) for job in sol])
     return objective_function(sol)
 
 def getScoreHeuristic(sol):
@@ -151,14 +153,10 @@ def getScoreHeuristic(sol):
     # now it's just a matter of adding up difference between job.duedate and job.r + job.p
     score = 0
     for id in hash_map.keys():
-        score += hash_map[id].d - (hash_map[id].r + hash_map[id].p)
-    print(hash_map)
+        # score += hash_map[id].d - (hash_map[id].r + hash_map[id].p)
+        score = min(score, hash_map[id].d - (hash_map[id].r + hash_map[id].p))
+    # print(hash_map)
     return score
-
-
-    
-
-
 
 def branchAndBound(data, heuristic_function, objective_function):
     """
@@ -196,20 +194,38 @@ def branchAndBound(data, heuristic_function, objective_function):
     rec(list(), data, 1e10)
     return global_res
 
+def simulate(n= 100):
+    h = list()
+    while (n != 0):
+        n -= 1
+        data = generate_data(4)
+        # print(data)
+
+        res = schedule(data)
+        # drawGantt(res.copy())
+        # print(getScore(res))
+        # print(res)
+            
+        # res = branchAndBound(data)
+        # print(res)
+        # drawGantt(res)
+        data = [Job(t) for t in data]
+        res2 = heurisitc([], data, getScoreHeuristic)
+        # print(res)
+        # drawGantt(res)
+        h.append((getScore(res), res2))
+    print(h)
+    plt.plot(range(len(h)), [x[0] for x in h])
+    plt.plot(range(len(h)), [x[1] for x in h])
+    plt.show()
 
 if __name__ == '__main__' :
     data = generate_data(4)
-    print(data)
-
+    # print(data)
     res = schedule(data)
-    # drawGantt(res.copy())
+    drawGantt(res.copy())
     print(getScore(res))
     # print(res)
-    
-    # res = branchAndBound(data)
-    # print(res)
-    # drawGantt(res)
-    data = [Job(t) for t in data]
-    res = heurisitc([], data, getScoreHeuristic)
-    print(res)
-    # drawGantt(res)
+        
+    res2 = heurisitc([], [Job(t) for t in data], getScoreHeuristic)
+    input()
