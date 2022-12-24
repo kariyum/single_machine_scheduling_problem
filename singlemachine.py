@@ -69,6 +69,7 @@ def getScore(sol):
     for i in range(1, len(s)):
         s[i] = (max(s[i-1][0] + s[i-1][1], s[i][0]), s[i][1], s[i][2], s[i][3])
         score += s[i][2] - (s[i][0] + s[i][1])
+    print(s)
     return score
 
 def heurisitc(sol, data, objective_function):
@@ -79,30 +80,84 @@ def heurisitc(sol, data, objective_function):
     """
     remaining_jobs_length = len(data) - len(sol)
     remaining_jobs = list(filter(lambda x : x.id not in [y.id for y in sol], data))
-    
+
     if (len(remaining_jobs) != remaining_jobs_length):
         print("Remaining jobs error. Check heuristic function.")
         exit(-1)
     # execute tasks with priority to due dates 
-    print("WHILE") 
-    while (len(remaining_jobs) != 0):
+    if (len(remaining_jobs) != 0):
         print("remaining_jobs = ", remaining_jobs)
         stops = list(set([job.r for job in remaining_jobs]))
         stops = sorted(stops)
-        if (len(stops) == 0):
-            break
-        for i, stop in enumerate(stops):
-            # stop == rj where new jobs are avaiable, choose one of them with priority to lower due date
-            availble_jobs = list(filter(lambda x : x.r == stop, remaining_jobs))
-            availble_jobs = sorted(availble_jobs, key= lambda x : (x.r, x.d))
-            
+        while (len(stops) != 0 and len(remaining_jobs) != 0) :
+            i = 0
+            stop = stops[0]
+            next_stop = stops[i+1] if (i < len(stops)-1) else 1e10
+            stops.pop(0)
+            # stop >= rj where new jobs are avaiable
+            available_jobs = list(filter(lambda x : x.r <= stop, remaining_jobs))
+            available_jobs = sorted(available_jobs, key= lambda x : x.d)
+            # print("Available jobs {}, Stop {}, stops {}".format(available_jobs, stop, stops))
+            if (len(available_jobs) == 0):
+                print("Machine is waiting")
+                continue
+            job_to_execute = available_jobs[0]
+            available_jobs.pop(0)
+            remaining_jobs = list(filter(lambda x : x.id != job_to_execute.id, remaining_jobs))
+
             # execute the job at 0 index having lowest release date and due date
-            next_r = stops[i+1] if (i < len(stops)-1) else 1e10
-            how_long = next_r - stop + 1
-            availble_jobs[0].remaining_time -= min(availble_jobs[0].remaining_time, how_long)
-            sol.append(Job((availble_jobs[0].r, availble_jobs[0].p, availble_jobs[0].d, availble_jobs[0].id)))
-        remaining_jobs = list(filter(lambda x : x.remaining_time != 0, remaining_jobs))
-    print(sorted(sol, key= lambda x : x.id))
+            how_long = next_stop - stop
+            executed_for = job_to_execute.remaining_time
+            job_to_execute.remaining_time -= min(job_to_execute.remaining_time, how_long)
+            executed_for -= job_to_execute.remaining_time
+            sol.append(Job((job_to_execute.r, executed_for, job_to_execute.d, job_to_execute.id)))
+            if (job_to_execute.remaining_time != 0):
+                remaining_jobs.append(Job((job_to_execute.r, job_to_execute.remaining_time, job_to_execute.d, job_to_execute.id)))
+            if (executed_for + stop < next_stop):
+                stops.append(executed_for + stop)
+            stops = sorted(list(set(stops)))
+        # remaining_jobs = list(filter(lambda x : x.remaining_time != 0, remaining_jobs))
+    # print(sol)
+    return objective_function(sol)
+
+def getScoreHeuristic(sol):
+    """
+     inputs: a non feasable solution
+     returns a score
+     this function is equivalent to getScore function when all jobs are executed without interruption
+    """
+    # sol : [Job()]
+    # convert each rj to start execution first
+    # we are going to group all exeuction chunks of the same job together
+    # compute the difference between completion time and due date
+    # add it to the score
+    
+    # convert each rj to the instant when it started the execution
+    for i in range(1, len(sol)):
+        sol[i].r = max(sol[i-1].p + sol[i-1].r, sol[i].r)
+
+    # group all execution chunks of the same job together
+    hash_map = dict()
+    for job in sol:
+        if (job.id in hash_map.keys()):
+            hash_map[job.id].append(job)
+        else:
+            hash_map[job.id] = [job]
+    
+    # for each grouped chunks retrieve the last executed chunk
+    for id in hash_map.keys():
+        hash_map[id] = max(hash_map[id], key= lambda x : x.r)
+    
+    # now it's just a matter of adding up difference between job.duedate and job.r + job.p
+    score = 0
+    for id in hash_map.keys():
+        score += hash_map[id].d - (hash_map[id].r + hash_map[id].p)
+    print(hash_map)
+    return score
+
+
+    
+
 
 
 def branchAndBound(data, heuristic_function, objective_function):
@@ -143,14 +198,18 @@ def branchAndBound(data, heuristic_function, objective_function):
 
 
 if __name__ == '__main__' :
-    data = generate_data(12)
-    # res = schedule(data)
+    data = generate_data(4)
+    print(data)
+
+    res = schedule(data)
     # drawGantt(res.copy())
-    # print(getScore(res))
+    print(getScore(res))
     # print(res)
     
     # res = branchAndBound(data)
     # print(res)
     # drawGantt(res)
     data = [Job(t) for t in data]
-    heurisitc(data[:3], data, getScore)
+    res = heurisitc([], data, getScoreHeuristic)
+    print(res)
+    # drawGantt(res)
