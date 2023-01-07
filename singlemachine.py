@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
 class Job:
     def __init__(self, t) -> None:
@@ -10,20 +11,25 @@ class Job:
     def __repr__(self) -> str:
         return str("(" + str(self.r) +", "+ str(self.p) +", "+ str(self.d) +", "+ str(self.id)+")")
 
-
-def generate_data(n):
+lam_global = 12
+process_time_range = (1, 10)
+due_date_range = (0, 10)
+def generate_data(n, p= False):
     """
-        n number of jobs
-        generates random release release dates (rj) using the poisson process
-        process time (pj) is a random integer generated randomly ranging from 0 to 10
-        due dates (dj) follow this formula: rj + pj + random integer between 0 and 10
-        jobs is a list of tuples (rj, pj, dj, id) 
+    :n number of jobs
+    :generates random release release dates (rj) using the poisson process
+    :process time (pj) is a random integer generated randomly ranging from 0 to 10
+    :due dates (dj) follow this formula: rj + pj + random integer between 0 and 10
+    :jobs is a list of tuples (rj, pj, dj, id) 
     """
-    release_date = np.random.poisson(lam=12, size=n)
-    process_time = [random.randint(1, 10) for _ in range(len(release_date))]
-    due_date = [x[0] + x[1] + random.randint(0, 10) for x in zip(release_date, process_time)]
+    release_date = np.random.poisson(lam=lam_global, size=n)
+    process_time = [random.randint(process_time_range[0], process_time_range[1]) for _ in range(len(release_date))]
+    due_date = [x[0] + x[1] + random.randint(due_date_range[0], due_date_range[1]) for x in zip(release_date, process_time)]
     tuples = list(zip(release_date, process_time, due_date, range(n)))
     jobs = [Job(t) for t in tuples]
+    if (p):
+        for j in jobs:
+            print(j)
     return jobs
 
 def drawGantt(res : list[Job], data : list[Job], block= True):
@@ -36,6 +42,7 @@ def drawGantt(res : list[Job], data : list[Job], block= True):
     plt.figure(figsize = (10, 10))
     
     plt.subplot(2, 1, 1)
+    
     plt.barh(y = [str(job.id) for job in res], width = [job.p for job in res], left= [job.r for job in res])
     plt.title("Solution plot GANTT")
     # plt.xticks(np.arange(min([job.r for job in res]), max([job.r + job.p for job in res]) + 1, 1))
@@ -50,23 +57,23 @@ def drawGantt(res : list[Job], data : list[Job], block= True):
 
 def schedule(data : list[Job]):
     """
-        utility function that solves the problem through EDD
-        data contains : release date, due date, process time, jobID
-        data = [(r0, p0, d0, jobID), ..., (rj, pj, dj, jobID)...]
-        sort by release date then sort by due date
+    :utility function that solves the problem through EDD
+    :data contains : release date, due date, process time, jobID
+    :data = [(r0, p0, d0, jobID), ..., (rj, pj, dj, jobID)...]
+    :sort by release date then sort by due date
     """
     sorted_jobs = sorted(data, key = lambda job : (job.r, job.d))
     sorted_jobs = [Job((job.r, job.p, job.d, job.id)) for job in sorted_jobs]
     for i in range(1, len(sorted_jobs)):
         sorted_jobs[i].r = max(sorted_jobs[i-1].r + sorted_jobs[i-1].p, sorted_jobs[i].r)
-    return sorted_jobs
+    return sorted_jobs, getScore(sorted_jobs)
 
 def getScore(sol : list[Job]):
     """
-     only works for completed solution without interruption
-     helper function that scores the solution (input)
-     input: a solution (rj, pj, dj, id)
-     output: a score if < means some jobs couldn't meet the deadline else we don't know.
+    :only works for completed solution without interruption
+    :helper function that scores the solution (input)
+    :input: a solution (rj, pj, dj, id)
+    :output: a score if < means some jobs couldn't meet the deadline else we don't know.
     """
     score = 0
     for job in sol:
@@ -74,17 +81,19 @@ def getScore(sol : list[Job]):
         score = min(score, job.d - (job.r + job.p)) # Lmax = retard maximal
     return score
 
-def heurisitc(sol, data, objective_function):
+def heurisitc(sol : list[Job], data : list[Job]):
     """
-     input: a semi completed solution (sol, data: list of Job class type)
-     completes the solution with the relaxed constraint which is preemption
-     output: score
+    :input: a semi completed solution (sol, data: list of Job class type)
+    :completes the solution with the relaxed constraint which is preemption
+    :output: score
     """
+    data = [Job((j.r, j.p, j.d, j.id)) for j in data]
+    sol = [Job((s.r, s.p, s.d, s.id)) for s in sol]
     remaining_jobs_length = len(data) - len(sol)
     remaining_jobs = list(filter(lambda x : x.id not in [y.id for y in sol], data))
 
     if (len(remaining_jobs) != remaining_jobs_length):
-        raise ValueError("Remaining jobs error. Check heuristic function.")
+        raise ValueError("Remaining jobs error. Check heuristic function. {} {}".format(len(remaining_jobs), remaining_jobs_length))
 
     # execute tasks with priority to due dates 
     if (len(remaining_jobs) != 0):
@@ -98,10 +107,10 @@ def heurisitc(sol, data, objective_function):
             stops.pop(0)
             # stop >= rj where new jobs are avaiable
             available_jobs = list(filter(lambda x : x.r <= stop, remaining_jobs))
-            available_jobs = sorted(available_jobs, key= lambda x : x.p / x.d)
+            available_jobs = sorted(available_jobs, key= lambda x : x.d)
             # print("Available jobs {}, Stop {}, stops {}".format(available_jobs, stop, stops))
             if (len(available_jobs) == 0):
-                print("Machine is waiting")
+                # print("Machine is waiting")
                 continue
             job_to_execute = available_jobs[0]
             available_jobs.pop(0)
@@ -120,26 +129,26 @@ def heurisitc(sol, data, objective_function):
             stops = sorted(list(set(stops)))
         # remaining_jobs = list(filter(lambda x : x.remaining_time != 0, remaining_jobs))
     # print(sol)
-    # drawGantt([(job.r, job.p, job.d, job.id) for job in sol])
-    return sol, objective_function(sol)
+    # drawGantt([Job((job.r, job.p, job.d, job.id)) for job in sol], data)
+    return sol, getScoreHeuristic([Job((s.r, s.p, s.d, s.id)) for s in sol])
 
 def getScoreHeuristic(sol : list[Job]):
     """
-     should handle feasable and non feasable solution
-     inputs: a solution
-     returns a score
-     this function should is equivalent to getScore function when all jobs are executed without interruption
-     TO VERIFY !
+    :should handle feasable and non feasable solution
+    :inputs: a solution list[Job]
+    :returns a score
+    :this function should be equivalent to getScore function when all jobs are executed without interruption
     """
     # sol : [Job()]
     # convert each rj to start execution first
     # we are going to group all exeuction chunks of the same job together
     # compute the difference between completion time and due date
     # add it to the score
-    aux = sol.copy()
+    aux = [Job((s.r, s.p, s.d, s.id)) for s in sol]
+    
     # convert each rj to the instant when it started the execution
-    for i in range(1, len(sol)):
-        aux[i].r = max(sol[i-1].p + sol[i-1].r, sol[i].r)
+    for i in range(1, len(aux)):
+        aux[i].r = max(aux[i-1].p + aux[i-1].r, aux[i].r)
     
     # group all execution chunks of the same job together
     hash_map = dict()
@@ -148,93 +157,168 @@ def getScoreHeuristic(sol : list[Job]):
             hash_map[job.id].append(job)
         else:
             hash_map[job.id] = [job]
-    
+    # print(hash_map)
+    # print([len(val) > 1 for val in hash_map.values()])
+    realisable = all([len(val) == 1 for val in hash_map.values()])
+    # print(realisable)
     # for each grouped chunks retrieve the last executed chunk
+    # print(hash_map)
     for id in hash_map.keys():
         hash_map[id] = max(hash_map[id], key= lambda x : x.r)
     
     # now it's just a matter of adding up difference between job.duedate and job.r + job.p
     score = 0
+    # print(aux)
     for id in hash_map.keys():
         # score += hash_map[id].d - (hash_map[id].r + hash_map[id].p)
         score = min(score, hash_map[id].d - (hash_map[id].r + hash_map[id].p))
-    # print(hash_map)
-    return score
+    return score, realisable
 
-def branchAndBound(data, heuristic_function, objective_function):
+
+@dataclass
+class NodeState:
+    """Class for keeping track of the node state in the queue."""
+    remaining_jobs: list[Job]
+    curr_sol: list[Job]
+
+def branchAndBound(data : list[Job], v= False):
     """
-        NOT FULLY IMPLEMENTED !
-        data contains : release date, due date, process time, jobID
-        lower bound is calculated with the relaxation of one constraint which is the possibility to interrupt 
-        a job and execute another one
+    :NOT FULLY IMPLEMENTED !
+    :data contains : release date, due date, process time, jobID
+    :lower bound is calculated with the relaxation of one constraint which is the possibility to interrupt 
+    :a job and execute another one
     """
     # at first the solution is empty
     # 1. insert one of the remaining jobs
     # 2. calculate the lower bound for each inserted job
     # 3. branch & bound
-    jobs = [Job(t) for t in data]
-    global_res = list()
-    def rec(sol, data, lower_bound):
-        # print(sol)
-        if (len(sol) == len(data)):
-            print(sol)
-            return sol, lower_bound
-        # if (heuristic(sol) > lower_bound):
-        #     # bound
-        #     print("bound")
-        #     return []
-        # branch
-        lower_bound = min(lower_bound, heuristic_function(sol))
-        # remaining jobs start from data[len(jobs):-1]
-        # call this function for each remaining job
-        for job in data[len(sol):]:
-            local_sol = sol.copy()
-            local_sol.append(job)
-            # print("local_sol", local_sol)
-            local_res, lb = rec(local_sol, data, lower_bound)
-            # print("here", job)
-            lower_bound = min(lower_bound, lb)
-        return sol, lower_bound
-    rec(list(), data, 1e10)
-    return global_res
+    
+    data = [Job((t.r, t.p, t.d, t.id)) for t in data]
+    # contains tuple for the parent data (remaining jobs) and current non completed solution
+    jobs_queue : list[NodeState] = [NodeState(remaining_jobs= [Job((t.r, t.p, t.d, t.id)) for t in data], curr_sol= [])]
+    best_solution, b = schedule([Job((t.r, t.p, t.d, t.id)) for t in data]) # best solution found so far REALISABLE
+    while len(jobs_queue) != 0:
+        if v == True:
+            print("Queued jobs count: {}".format(len(jobs_queue)))
+        # print("POP")
+        state : NodeState = jobs_queue.pop(0)
+        # print("State curr sol, ", state.curr_sol)
+        # state.remaining_jobs = [j for j in state.remaining_jobs if j not in state.curr_sol]
+        # print(len(state.remaining_jobs))
+        for job in state.remaining_jobs:
+            # new_remaining_jobs = [j for j in state.remaining_jobs if j.d != job.d]
+            remaining_jobs = [Job((j.r, j.p, j.d, j.id)) for j in state.remaining_jobs if j.id != job.id]
+            new_solution = [Job((j.r, j.p, j.d, j.id)) for j in state.curr_sol] + [Job((job.r, job.p, job.d, job.id))]
+            solution, (h_score, realisable) = heurisitc(sol= [Job((j.r, j.p, j.d, j.id)) for j in new_solution], data= [Job((t.r, t.p, t.d, t.id)) for t in data])
+            if h_score <= b: # bound -50 < -30
+                continue
+            else: # branch
+                jobs_queue.append(NodeState(remaining_jobs, [Job((j.r, j.p, j.d, j.id)) for j in new_solution]))
+            if realisable and h_score > b:
+                # print("solution {} \nrealisable {}".format(solution, realisable))
+                # print("h: {} b: {}".format(h_score, b))
+                # print("Solution ", solution)
+                b = max(b, h_score)
+                best_solution = [Job((j.r, j.p, j.d, j.id)) for j in solution]
+                # print("Best solution,", best_solution)
+    # print("Best solution inside {}".format(best_solution))
+    return best_solution, getScoreHeuristic(best_solution)
 
-def simulate(n= 100):
-    h = list()
-    while (n != 0):
-        n -= 1
-        data = generate_data(4)
-        # print(data)
+def drawHeuristic(res : list[Job], data : list[Job], block= True):
+    # print(res)
+    jobs = [Job((j.r, j.p, j.d, j.id)) for j in res]
+    res = [(j.r, j.p, j.d, j.id) for j in res]
+    for i in range(1, len(res)):
+        res[i] = (max(res[i-1][0] + res[i-1][1], res[i][0]), res[i][1], res[i][2], res[i][3])
+    
+    # plotting the GANTT diagram
+    # fig = plt.figure(figsize = (10, 10))
+    fig, (ax1,ax2) = plt.subplots(nrows= 2, sharex=True, figsize=(10, 10))
+    plt.subplots_adjust(hspace=.0)
+    ax1.barh(y = [str(x[3]) for x in res], width = [x[1] for x in res], left= [x[0] for x in res])
 
-        res = schedule(data)
-        # drawGantt(res.copy())
-        # print(getScore(res))
-        # print(res)
-            
-        # res = branchAndBound(data)
-        # print(res)
-        # drawGantt(res)
-        data = [Job(t) for t in data]
-        res2 = heurisitc([], data, getScoreHeuristic)
-        # print(res)
-        # drawGantt(res)
-        if (getScoreHeuristic([Job((x[0], x[1], x[2], x[3])) for x in res]) != getScore(res)):
-            print("NO")
-            
-        h.append((getScoreHeuristic([Job((x[0], x[1], x[2], x[3])) for x in res]), res2))
-    # print(h)
-    plt.plot(range(len(h)), [x[0] for x in h])
-    plt.plot(range(len(h)), [x[1] for x in h])
+    # plt.xlim([min([x[0] for x in aux_res]), max([max(res[i-1][0] + res[i-1][1], res[i][0]) + x[1] for x in aux_res])])
+    # plt.xticks(np.arange(min([x[0] for x in aux_res]), max([max(res[i-1][0] + res[i-1][1], res[i][0]) + x[1] for x in aux_res]) + 1, 1))
+    plt.xticks(list(set([r[0] for r in res] + [r[0] + r[1] for r in res])))
+    # plt.subplot(2, 1, 2, sharex=True)
+    ax2.barh(y = [str(j.id) for j in data], width = [j.p for j in data], left= [j.r for j in data])
+    # plt.xlim([min([x[0] for x in aux_res]), max([max(res[i-1][0] + res[i-1][1], res[i][0]) + x[1] for x in aux_res])])
+    plt.xticks(list(set([j.r for j in jobs] + [j.r + j.p for j in jobs] + [r[0] + r[1] for r in res])))
+    # plt.tight_layout()
     plt.show()
 
+def simulate(number_of_runs= 100, number_of_jobs= 5):
+    h = list()
+    for i in range(number_of_runs):
+        print("Iter {}".format(i))
+        data = generate_data(number_of_jobs) # make sure that this data is constant
+        bres, (bscore, _) = branchAndBound(data)
+        sres, sscore = schedule(data)
+        _, h_score = heurisitc([], data)
+        h.append((sscore, bscore, h_score[0]))
+        if (bscore < sscore):
+            raise ValueError("Heuristic is worse")
+    plt.figure(figsize=(10, 10))
+    plt.subplot(2, 1, 1)
+    plt.title("Score comparaison between B&B and EDD")
+    plt.plot(range(len(h)), [x[1] for x in h])
+    plt.plot(range(len(h)), [x[0] for x in h])
+    plt.ylim(min([x[0] for x in h] + [x[1] for x in h] + [x[2] for x in h]) -3, 3)
+    plt.legend(['B&B score', 'EDD score'])
+    plt.subplot(2, 1, 2)
+    plt.title("Score comparaison between B&B and score with preemption")
+    plt.plot(range(len(h)), [x[1] for x in h])
+    plt.plot(range(len(h)), [x[2] for x in h])
+    plt.ylim(min([x[0] for x in h] + [x[1] for x in h] + [x[2] for x in h]) -3, 3)
+    plt.legend(['B&B score', 'Preemption score'])
+    plt.show()
+
+def run(number_of_jobs= 5):
+    data = generate_data(number_of_jobs)
+    bres, (bscore, _) = branchAndBound(data, v= True)
+    sres, sscore = schedule(data)
+    print("Schedule score: {}, b&b: {}".format(sscore, bscore))
+    drawGantt(sres, data, block= False)
+    drawHeuristic(bres, data)
+
 if __name__ == '__main__' :
-    data = generate_data(14) # make sure that this data is constant
-    res = schedule(data)
-    print(getScore(res))
-    drawGantt(res, data, block= False)
-    # # print(res)
-    res2, score = heurisitc([], data, getScoreHeuristic)
-    print(score)
-    drawGantt(res2, data)
-    # res2 = heurisitc([], [Job(t) for t in data], getScoreHeuristic)
-    # simulate(100)
-    # input()
+
+    print("1. Simulation graph.\n2. Run once.\n3. Change data generation parameters.")
+    t = int(input())
+    if (t == 1):
+        print("Input number of runs.")
+        n = int(input())
+        print("Input number of jobs.")
+        j = int(input())
+        simulate(number_of_runs= n, number_of_jobs= j)
+    elif (t == 2):
+        print("Input number of jobs.")
+        j = int(input())
+        run(j)
+    elif (t == 3):
+        print("Input lambda for the poisson distribution.")
+        lam_global = int(input())
+        print("Input min value of process time.")
+        p_min = int(input())
+        print("Input max value of process time.")
+        p_max = int(input())
+        process_time_range = (p_min, p_max)
+
+        print("Input min value of due date.")
+        d_min = int(input())
+        print("Input max value of due date.")
+        d_max = int(input())
+        due_date_range = (d_min, d_max)
+    if (t == 3):
+        print("1. Simulation graph.\n2. Run once.")
+        t = int(input())
+        if (t == 1):
+            print("Input number of runs.")
+            n = int(input())
+            print("Input number of jobs.")
+            j = int(input())
+            simulate(number_of_runs= n, number_of_jobs= j)
+        elif (t == 2):
+            print("Input number of jobs.")
+            j = int(input())
+            run(j)
