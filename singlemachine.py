@@ -245,7 +245,75 @@ def drawHeuristic(res : list[Job], data : list[Job], block= True):
     # plt.xlim([min([x[0] for x in aux_res]), max([max(res[i-1][0] + res[i-1][1], res[i][0]) + x[1] for x in aux_res])])
     plt.xticks(list(set([j.r for j in jobs] + [j.r + j.p for j in jobs] + [r[0] + r[1] for r in res])))
     # plt.tight_layout()
-    plt.show()
+    plt.show(block= block)
+
+def geneticAlgorithm(data: list[Job], pop_size= 50):
+    jobs = [Job((j.r, j.p, j.d, j.id)) for j in data]
+    def evaluate(agents: list[Job]):
+        return [(agent, getScoreHeuristic(agent)) for agent in agents]
+    
+    def select(agents: list[(Job, int)]):
+        aux = sorted(agents, key= lambda t : t[1], reverse= True)[:int(0.2*pop_size)]
+        # for i in range(10):
+        #     print(aux[i][1])
+        return [a[0] for a in aux], (aux[0][0], aux[0][1][0], aux[0][1][1])
+
+    def crossover(agents: list[Job]):
+        offsprings = []
+
+        for _ in range(int((pop_size - len(agents))/2)):
+            p1 = random.choice(agents)
+            p2 = random.choice(agents)
+
+            offspring = []
+            for j1, j2 in zip(p1, p2):
+                j1_job_in_offspring = j1.id in [x.id for x in offspring]
+                j2_job_in_offspring = j2.id in [x.id for x in offspring]
+                if j2_job_in_offspring and j1_job_in_offspring:
+                    jobs_in_offspring = [x.id for x in offspring]
+                    jobs_not_inoffspring = [job for job in p1 if not job.id in jobs_in_offspring]
+                    # print("Jobs not in offspring {} jobs in offspring {}".format(jobs_not_inoffspring, offspring))
+                    offspring.append(random.choice(jobs_not_inoffspring))
+                    continue
+                if not j2_job_in_offspring and not j1_job_in_offspring:
+                    if (random.random() < 0.5):
+                        offspring.append(Job((j1.r, j1.p, j1.d, j1.id)))
+                    else:
+                        offspring.append(Job((j2.r, j2.p, j2.d, j2.id)))
+                    continue
+                if j2_job_in_offspring:
+                    offspring.append(Job((j1.r, j1.p, j1.d, j1.id)))
+                else:
+                    offspring.append(Job((j2.r, j2.p, j2.d, j2.id)))
+            offsprings.append(offspring)
+        
+        return offsprings
+
+    def mutate(agents: list[Job]):
+        new_agents = []
+        for agent in agents:
+            if random.random() < 0.1:
+                a = random.randint(0, len(agent)-1)
+                b = random.randint(0, len(agent)-1)
+                agent[a], agent[b] = agent[b], agent[a]
+            new_agents.append(agent)
+        return new_agents
+    
+    agents = [random.sample(jobs, len(jobs)) for _ in range(pop_size)]
+    
+    best_score = -1e9
+    for _ in range(1000):
+        agents = evaluate(agents)
+        agents, (best_agent_res, best_agent, realisable) = select(agents)
+        agents = crossover(agents)
+        agents = mutate(agents)
+        
+        agents = agents + [random.sample(jobs, len(jobs)) for _ in range(pop_size)]
+        agents = agents[:pop_size]
+        if (best_score < best_agent):
+            best_score = best_agent
+            print("Best score: {}".format(best_score, realisable))
+    drawHeuristic(best_agent_res, data, block= False)
 
 def simulate(number_of_runs= 100, number_of_jobs= 5):
     h = list()
@@ -281,8 +349,7 @@ def run(number_of_jobs= 5):
     drawGantt(sres, data, block= False)
     drawHeuristic(bres, data)
 
-if __name__ == '__main__' :
-
+def main():
     print("1. Simulation graph.\n2. Run once.\n3. Change data generation parameters.")
     t = int(input())
     if (t == 1):
@@ -296,6 +363,9 @@ if __name__ == '__main__' :
         j = int(input())
         run(j)
     elif (t == 3):
+        global lam_global
+        global process_time_range
+        global due_date_range
         print("Input lambda for the poisson distribution.")
         lam_global = int(input())
         print("Input min value of process time.")
@@ -322,3 +392,16 @@ if __name__ == '__main__' :
             print("Input number of jobs.")
             j = int(input())
             run(j)
+
+if __name__ == '__main__' :
+    # main()
+    data = generate_data(100)
+    res, (hscore, realisable) = heurisitc([], data)
+    print("Heuristic score {} {}".format(hscore, realisable))
+    geneticAlgorithm(data, 50)
+    input()
+    bres, bscore = branchAndBound(data, v= True)
+    drawHeuristic(bres, data, block= True)
+    print("bscore {}".format(bscore[0]))
+    input()
+    
