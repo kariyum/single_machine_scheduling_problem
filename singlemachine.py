@@ -301,8 +301,9 @@ def geneticAlgorithm(data: list[Job], pop_size= 50):
     
     agents = [random.sample(jobs, len(jobs)) for _ in range(pop_size)]
     
+    best_score_history = list()
     best_score = -1e9
-    for _ in range(1000):
+    for i in range(1000):
         agents = evaluate(agents)
         agents, (best_agent_res, best_agent, realisable) = select(agents)
         agents = crossover(agents)
@@ -312,8 +313,12 @@ def geneticAlgorithm(data: list[Job], pop_size= 50):
         agents = agents[:pop_size]
         if (best_score < best_agent):
             best_score = best_agent
-            print("Best score: {}".format(best_score, realisable))
+            print("Best score: {} GEN {}".format(best_score, i+1))
+        best_score_history.append(best_score)
     drawHeuristic(best_agent_res, data, block= False)
+    plt.figure()
+    plt.plot(range(len(best_score_history)), best_score_history)
+    plt.show(block= False)
 
 def simulate(number_of_runs= 100, number_of_jobs= 5):
     h = list()
@@ -349,6 +354,121 @@ def run(number_of_jobs= 5):
     drawGantt(sres, data, block= False)
     drawHeuristic(bres, data)
 
+def responseTimeBenchmark():
+    # heuristic time ms
+    # b&b time ms
+    # genetic algorithm time ms
+    for n in range(4, 10):
+        data = generate_data(n)
+        res, (hscore, realisable) = heurisitc([], data)
+        print("Heuristic score {} {}".format(hscore, realisable))
+        geneticAlgorithm(data, 50)
+        input()
+        bres, bscore = branchAndBound(data, v= True)
+        drawHeuristic(bres, data, block= True)
+        print("bscore {}".format(bscore[0]))
+        input()
+
+def antsFormation(data: list[Job]):
+    PH_MIN = 0.5
+    PH_MAX = 6
+    ALPHA = 1
+    BETA = 2
+    ANTS = 50
+    ITER_MAX = 1000
+
+    jobs = [Job((t.r, t.p, t.d, t.id)) for t in data]
+    n = len(jobs)
+    pheromone : list[list[float]] = [[PH_MIN]*n for _ in range(n)]
+    def advance(ants: list[list[Job]], pheromone):
+        res : list[list[Job]] = list()
+        for ant in ants:
+            # ants chooses next job
+            # get remaining jobs
+            # remaining_jobs = list(filter(lambda x : not x.id in [i.id for i in ant], ant))
+            remaining_jobs = [j for j in jobs if not j.id in [x.id for x in ant] ]
+            # remaining_jobs= []
+            # ant_jobs_id = [j.id for j in ant]
+            # for j in jobs:
+            #     if (j.id in ant_jobs_id):
+            #         continue
+            #     remaining_jobs.append(j)
+            
+            if (len(remaining_jobs) == 0):
+                print("remaining jobs = 0")
+                continue
+            # print("Remaining jobs", remaining_jobs)
+            # calculate probabilities
+            remaining_jobs_id = [j.id for j in remaining_jobs]
+            pheromone_values = [(pheromone[ant[-1].id][j.id], j) for j in remaining_jobs]
+            
+            s = 0
+            for p, j in pheromone_values:
+                s += p**ALPHA * j.d**BETA
+            
+            prob_pool = [(ph**ALPHA * (j.r/j.d) **BETA)/(s + 1e-3) for ph, j in pheromone_values]
+            prob_pool = [0.0] + prob_pool
+            for i in range(1, len(prob_pool)):
+                prob_pool[i] += prob_pool[i-1]
+            
+            # print(prob_pool)
+            # input()
+            next_job_id = 0
+            r = random.random()
+            for i in range(1, len(prob_pool)):
+                if (prob_pool[i-1] < r and r < prob_pool[i]):
+                    next_job_id = i-1
+            
+            # ant.append(remaining_jobs[next_job_id])
+            # print(len(remaining_jobs), next_job_id)
+            ant.append(remaining_jobs[next_job_id])
+            res.append(ant)
+        # print(res)
+        return res
+    
+    def updatePheromone(ants, pheromone):
+        for ant in ants:
+            # print("add")
+            ids = [j.id for j in ant]
+            for i in range(1, len(ids)):
+                pheromone[ids[i-1]][ids[i]] += 1/(abs(getScoreHeuristic(ant)[0]) + 1e-3)
+                # from i to j has not the same effect as from j to i, you should not be adding it.
+                # pheromone[ids[i]][ids[i-1]] += 1/(abs(getScoreHeuristic(ant)[0]) + 1e-9)
+                # print("adding ", 1/(abs(getScoreHeuristic(ant)[0] + 1)))
+        # print(pheromone)
+        return pheromone
+    
+    def evaporatePheromone(pheromone):
+        for i in range(len(pheromone)):
+            for j in range(len(pheromone)):
+                pheromone[i][j] *= 0.6
+                if pheromone[i][j] < PH_MIN :
+                    pheromone[i][j] = PH_MIN
+                if pheromone[i][j] > PH_MAX :
+                    pheromone[i][j] = PH_MAX
+                pheromone[i][j] = round(pheromone[i][j], 5)
+        return pheromone
+    
+    best_fitness = -1e9
+    for i in range(ITER_MAX):
+        ants = [[random.choice(data)] for _ in range(ANTS)]
+        for _ in range(len(data)-1):
+            # print("Before advance {} {}".format(ants, pheromone))
+            ants = advance(ants, pheromone)
+            # print("After advance {} {}".format(ants, pheromone))
+        pheromone = updatePheromone(ants, pheromone)
+        # print(pheromone)
+        # input()
+        # for a in ants:
+        #     print(a)
+        # print("After update PH {} {}".format(ants, pheromone))
+        pheromone = evaporatePheromone(pheromone)
+        fitness = [getScoreHeuristic(ant)[0] for ant in ants]
+        if (best_fitness < max(fitness)):
+            best_fitness = max(max(fitness), best_fitness)
+            print("Ants found : {} ITER {}".format(best_fitness, i+1))
+    for ph in pheromone:
+        print(ph)
 def main():
     print("1. Simulation graph.\n2. Run once.\n3. Change data generation parameters.")
     t = int(input())
@@ -393,9 +513,8 @@ def main():
             j = int(input())
             run(j)
 
-if __name__ == '__main__' :
-    # main()
-    data = generate_data(100)
+def geneticSolution():
+    data = generate_data(9)
     res, (hscore, realisable) = heurisitc([], data)
     print("Heuristic score {} {}".format(hscore, realisable))
     geneticAlgorithm(data, 50)
@@ -405,3 +524,8 @@ if __name__ == '__main__' :
     print("bscore {}".format(bscore[0]))
     input()
     
+if __name__ == '__main__' :
+    # main()
+    data = generate_data(5)
+    antsFormation(data)
+    geneticAlgorithm(data)
