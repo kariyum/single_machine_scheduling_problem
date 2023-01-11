@@ -303,7 +303,7 @@ def geneticAlgorithm(data: list[Job], pop_size= 50):
     
     best_score_history = list()
     best_score = -1e9
-    for i in range(1000):
+    for i in range(100):
         agents = evaluate(agents)
         agents, (best_agent_res, best_agent, realisable) = select(agents)
         agents = crossover(agents)
@@ -314,11 +314,12 @@ def geneticAlgorithm(data: list[Job], pop_size= 50):
         if (best_score < best_agent):
             best_score = best_agent
             print("Best score: {} GEN {}".format(best_score, i+1))
-        best_score_history.append(best_score)
-    drawHeuristic(best_agent_res, data, block= False)
-    plt.figure()
-    plt.plot(range(len(best_score_history)), best_score_history)
-    plt.show(block= False)
+        best_score_history.append((best_score, i))
+    return best_score
+    # drawHeuristic(best_agent_res, data, block= False)
+    # plt.figure()
+    # plt.plot(range(len(best_score_history)), best_score_history)
+    # plt.show(block= False)
 
 def simulate(number_of_runs= 100, number_of_jobs= 5):
     h = list()
@@ -370,16 +371,16 @@ def responseTimeBenchmark():
         input()
 
 def antsFormation(data: list[Job]):
-    PH_MIN = 0.5
-    PH_MAX = 6
+    PH_MIN = 0.1
+    PH_MAX = 10
     ALPHA = 1
-    BETA = 2
+    BETA = 0
     ANTS = 50
-    ITER_MAX = 1000
+    ITER_MAX = 200
 
     jobs = [Job((t.r, t.p, t.d, t.id)) for t in data]
     n = len(jobs)
-    pheromone : list[list[float]] = [[PH_MIN]*n for _ in range(n)]
+    pheromone : list[list[float]] = [[1]*n for _ in range(n)]
     def advance(ants: list[list[Job]], pheromone):
         res : list[list[Job]] = list()
         for ant in ants:
@@ -404,9 +405,9 @@ def antsFormation(data: list[Job]):
             
             s = 0
             for p, j in pheromone_values:
-                s += p**ALPHA * j.d**BETA
+                s += p**ALPHA * (1/(j.r + j.d))**BETA
             
-            prob_pool = [(ph**ALPHA * (j.r/j.d) **BETA)/(s + 1e-3) for ph, j in pheromone_values]
+            prob_pool = [(ph**ALPHA * (1/(j.r + j.d)) **BETA)/(s + 1e-3) for ph, j in pheromone_values]
             prob_pool = [0.0] + prob_pool
             for i in range(1, len(prob_pool)):
                 prob_pool[i] += prob_pool[i-1]
@@ -431,7 +432,7 @@ def antsFormation(data: list[Job]):
             # print("add")
             ids = [j.id for j in ant]
             for i in range(1, len(ids)):
-                pheromone[ids[i-1]][ids[i]] += 1/(abs(getScoreHeuristic(ant)[0]) + 1e-3)
+                pheromone[ids[i-1]][ids[i]] += 1/(abs(getScoreHeuristic(ant)[0])**2 + 1e-3)
                 # from i to j has not the same effect as from j to i, you should not be adding it.
                 # pheromone[ids[i]][ids[i-1]] += 1/(abs(getScoreHeuristic(ant)[0]) + 1e-9)
                 # print("adding ", 1/(abs(getScoreHeuristic(ant)[0] + 1)))
@@ -441,15 +442,16 @@ def antsFormation(data: list[Job]):
     def evaporatePheromone(pheromone):
         for i in range(len(pheromone)):
             for j in range(len(pheromone)):
-                pheromone[i][j] *= 0.6
+                pheromone[i][j] *= 0.95
                 if pheromone[i][j] < PH_MIN :
                     pheromone[i][j] = PH_MIN
                 if pheromone[i][j] > PH_MAX :
                     pheromone[i][j] = PH_MAX
-                pheromone[i][j] = round(pheromone[i][j], 5)
+                pheromone[i][j] = round(pheromone[i][j], 6)
         return pheromone
     
     best_fitness = -1e9
+    fitness_history = list()
     for i in range(ITER_MAX):
         ants = [[random.choice(data)] for _ in range(ANTS)]
         for _ in range(len(data)-1):
@@ -467,8 +469,30 @@ def antsFormation(data: list[Job]):
         if (best_fitness < max(fitness)):
             best_fitness = max(max(fitness), best_fitness)
             print("Ants found : {} ITER {}".format(best_fitness, i+1))
+        fitness_history.append((sum(fitness)/len(fitness), i))
     for ph in pheromone:
         print(ph)
+    # plt.figure()
+    # plt.plot(list(range(len(fitness_history))), [x[0] for x in fitness_history])
+    # plt.show()
+    return best_fitness
+
+def antsTuning():
+    """This function will evaluate ants score vs genetic score"""
+    ants_score = list()
+    genetic_score = list()
+    for i in range(20):
+        data = generate_data(8)
+        ant, gene = antsFormation(data), geneticAlgorithm(data)
+        ants_score.append((ant, i))
+        genetic_score.append((gene, i))
+    # ants_score = [(ants_score[i-1][0], ants_score[i-1][1]) for i in range(1, len(ants_score)) for _ in range(ants_score[i][1]-ants_score[i-1][1])]
+    # ants_score += [(ants_score[-1][0], 1000)]
+    plt.figure(figsize=(10, 10))
+    plt.plot([t[1] for t in ants_score], [t[0] for t in ants_score])
+    plt.plot([t[1] for t in genetic_score], [t[0] for t in genetic_score])
+    plt.show()
+
 def main():
     print("1. Simulation graph.\n2. Run once.\n3. Change data generation parameters.")
     t = int(input())
@@ -526,6 +550,7 @@ def geneticSolution():
     
 if __name__ == '__main__' :
     # main()
-    data = generate_data(5)
-    antsFormation(data)
-    geneticAlgorithm(data)
+    # data = generate_data(5)
+    # antsFormation(data)
+    # geneticAlgorithm(data)
+    antsTuning()
