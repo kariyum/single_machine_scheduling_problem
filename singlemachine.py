@@ -181,9 +181,9 @@ class NodeState:
     remaining_jobs: list[Job]
     curr_sol: list[Job]
 
+
 def branchAndBound(data : list[Job], v= False):
     """
-    :NOT FULLY IMPLEMENTED !
     :data contains : release date, due date, process time, jobID
     :lower bound is calculated with the relaxation of one constraint which is the possibility to interrupt 
     :a job and execute another one
@@ -222,7 +222,8 @@ def branchAndBound(data : list[Job], v= False):
                 best_solution = [Job((j.r, j.p, j.d, j.id)) for j in solution]
                 # print("Best solution,", best_solution)
     # print("Best solution inside {}".format(best_solution))
-    return best_solution, getScoreHeuristic(best_solution)
+    # drawGantt(best_solution, data)
+    return getScoreHeuristic(best_solution)[0] #best_solution, getScoreHeuristic(best_solution)
 
 def drawHeuristic(res : list[Job], data : list[Job], block= True):
     # print(res)
@@ -308,7 +309,8 @@ def geneticAlgorithm(data: list[Job], pop_size= 50):
         agents, (best_agent_res, best_agent, realisable) = select(agents)
         agents = crossover(agents)
         agents = mutate(agents)
-        
+        if (not realisable):
+            raise ValueError("Yoo an imaginary gene.")
         agents = agents + [random.sample(jobs, len(jobs)) for _ in range(pop_size)]
         agents = agents[:pop_size]
         if (best_score < best_agent):
@@ -374,7 +376,7 @@ def antsFormation(data: list[Job]):
     PH_MIN = 0.1
     PH_MAX = 10
     ALPHA = 1
-    BETA = 0
+    BETA = 1
     ANTS = 50
     ITER_MAX = 200
 
@@ -401,28 +403,37 @@ def antsFormation(data: list[Job]):
             # print("Remaining jobs", remaining_jobs)
             # calculate probabilities
             remaining_jobs_id = [j.id for j in remaining_jobs]
-            pheromone_values = [(pheromone[ant[-1].id][j.id], j) for j in remaining_jobs]
+            pheromone_values = [(pheromone[ant[-1].id][j.id], j, 1) for j in remaining_jobs]
             
+            # why not appending a job at the beginning of the path. that way the starting point wouldn't matter.
+            pheromone_values_0 = [(pheromone[j.id][ant[0].id], j, 0) for j in remaining_jobs]
+            
+            pheromone_values.extend(pheromone_values_0)
             s = 0
-            for p, j in pheromone_values:
+            for p, j, _ in pheromone_values:
                 s += p**ALPHA * (1/(j.r + j.d))**BETA
             
-            prob_pool = [(ph**ALPHA * (1/(j.r + j.d)) **BETA)/(s + 1e-3) for ph, j in pheromone_values]
-            prob_pool = [0.0] + prob_pool
+            prob_pool = [((ph**ALPHA * (1/(j.r + j.d)) **BETA)/(s + 1e-20), j, wer) for ph, j, wer in pheromone_values]
+            prob_pool = [(0.0, 0, 0)] + prob_pool
             for i in range(1, len(prob_pool)):
-                prob_pool[i] += prob_pool[i-1]
+                prob_pool[i] = (prob_pool[i-1][0] + prob_pool[i][0], prob_pool[i][1], prob_pool[i][2])
             
-            # print(prob_pool)
             # input()
+            previous_ant_len = len(ant)
             next_job_id = 0
             r = random.random()
             for i in range(1, len(prob_pool)):
-                if (prob_pool[i-1] < r and r < prob_pool[i]):
-                    next_job_id = i-1
-            
+                if (prob_pool[i-1][0] < r and r <= prob_pool[i][0]):
+                    if (prob_pool[i][2] == 0): # append job at the start of the path
+                        ant = [prob_pool[i][1]] + ant
+                    else:
+                        ant.append(prob_pool[i][1])
+            if (len(ant) == previous_ant_len):
+                raise ValueError(f"YOO ANTS NOT APPENDING A JOB {len(ant)} {previous_ant_len} {r} {prob_pool}")
             # ant.append(remaining_jobs[next_job_id])
             # print(len(remaining_jobs), next_job_id)
-            ant.append(remaining_jobs[next_job_id])
+            
+            # ant.append(remaining_jobs[next_job_id])
             res.append(ant)
         # print(res)
         return res
@@ -432,7 +443,7 @@ def antsFormation(data: list[Job]):
             # print("add")
             ids = [j.id for j in ant]
             for i in range(1, len(ids)):
-                pheromone[ids[i-1]][ids[i]] += 1/(abs(getScoreHeuristic(ant)[0])**2 + 1e-3)
+                pheromone[ids[i-1]][ids[i]] += 10/(abs(getScoreHeuristic(ant)[0])**2 + 1e-3)
                 # from i to j has not the same effect as from j to i, you should not be adding it.
                 # pheromone[ids[i]][ids[i-1]] += 1/(abs(getScoreHeuristic(ant)[0]) + 1e-9)
                 # print("adding ", 1/(abs(getScoreHeuristic(ant)[0] + 1)))
@@ -465,13 +476,22 @@ def antsFormation(data: list[Job]):
         #     print(a)
         # print("After update PH {} {}".format(ants, pheromone))
         pheromone = evaporatePheromone(pheromone)
+        
+        # draw gantt of the best solution
+
         fitness = [getScoreHeuristic(ant)[0] for ant in ants]
+        if not any([getScoreHeuristic(ant)[1] for ant in ants]):
+            raise ValueError("Ants providing an imaginary solution.")
         if (best_fitness < max(fitness)):
             best_fitness = max(max(fitness), best_fitness)
             print("Ants found : {} ITER {}".format(best_fitness, i+1))
         fitness_history.append((sum(fitness)/len(fitness), i))
-    for ph in pheromone:
-        print(ph)
+    best_solution = max(ants, key= lambda ant : getScoreHeuristic(ant)[0])
+    print(f"ANTS best sol : {best_solution} Score : {getScoreHeuristic(best_solution)} Data : {data}")
+    # drawHeuristic(best_solution, data)
+    # print([ant[0] for ant in ants])
+    # for ph in pheromone:
+    #     print(ph)
     # plt.figure()
     # plt.plot(list(range(len(fitness_history))), [x[0] for x in fitness_history])
     # plt.show()
@@ -481,16 +501,22 @@ def antsTuning():
     """This function will evaluate ants score vs genetic score"""
     ants_score = list()
     genetic_score = list()
+    # bb_score = list()
     for i in range(20):
-        data = generate_data(8)
+        data = generate_data(10)
         ant, gene = antsFormation(data), geneticAlgorithm(data)
         ants_score.append((ant, i))
         genetic_score.append((gene, i))
+        # bb_score.append((bb, i))
     # ants_score = [(ants_score[i-1][0], ants_score[i-1][1]) for i in range(1, len(ants_score)) for _ in range(ants_score[i][1]-ants_score[i-1][1])]
     # ants_score += [(ants_score[-1][0], 1000)]
+    # for i in range(len(bb_score)):
+    #     print(f"B&B {bb_score[i][0]} GEN {genetic_score[i][0]} ANT {ants_score[i][0]}")
     plt.figure(figsize=(10, 10))
+    # plt.plot([t[1] for t in bb_score], [t[0] for t in bb_score], linewidth = 4)
     plt.plot([t[1] for t in ants_score], [t[0] for t in ants_score])
     plt.plot([t[1] for t in genetic_score], [t[0] for t in genetic_score])
+    plt.legend(['ANTS score', 'GENETIC score'])
     plt.show()
 
 def main():
