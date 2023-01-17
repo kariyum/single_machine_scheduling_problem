@@ -14,7 +14,7 @@ class Job:
 lam_global = 12
 process_time_range = (1, 10)
 due_date_range = (0, 10)
-def generate_data(n, p= False):
+def generate_data(n, p= False, static= False):
     """
     :n number of jobs
     :generates random release release dates (rj) using the poisson process
@@ -22,20 +22,32 @@ def generate_data(n, p= False):
     :due dates (dj) follow this formula: rj + pj + random integer between 0 and 10
     :jobs is a list of tuples (rj, pj, dj, id) 
     """
-    release_date = np.random.poisson(lam=lam_global, size=n)
-    process_time = [random.randint(process_time_range[0], process_time_range[1]) for _ in range(len(release_date))]
-    due_date = [x[0] + x[1] + random.randint(due_date_range[0], due_date_range[1]) for x in zip(release_date, process_time)]
-    tuples = list(zip(release_date, process_time, due_date, range(n)))
-    jobs = [Job(t) for t in tuples]
+    jobs = []
+    if (static):
+        f = open("data.txt", "r")
+        t = f.readline()
+        t = t.split(" ")
+        tuples = [(int(t[i]), int(t[i+1]), int(t[i+2]), int(t[i+3])) for i in range(0, len(t)-4, 4)]
+        jobs = [Job(t) for t in tuples]
+    else:
+        release_date = np.random.poisson(lam=lam_global, size=n)
+        process_time = [random.randint(process_time_range[0], process_time_range[1]) for _ in range(len(release_date))]
+        due_date = [x[0] + x[1] + random.randint(due_date_range[0], due_date_range[1]) for x in zip(release_date, process_time)]
+        tuples = list(zip(release_date, process_time, due_date, range(n)))
+        f = open("data.txt", "w")
+        f.writelines([f"{t[0]} {t[1]} {t[2]} {t[3]} " for t in tuples])
+        jobs = [Job(t) for t in tuples]
     if (p):
         for j in jobs:
             print(j)
+    if (len(jobs) != n):
+        raise ValueError("Reading data from file with number of jobs != n.")
     return jobs
 
 def drawGantt(res : list[Job], data : list[Job], block= True):
     """
-        utility function that draws GANTT diagram of the solution
-        takes a solution as an argument and draws the corresponding GANTT diagram
+    utility function that draws GANTT diagram of the solution
+    takes a solution as an argument and draws the corresponding GANTT diagram
     """
     
     # plotting the GANTT diagram
@@ -223,7 +235,7 @@ def branchAndBound(data : list[Job], v= False):
                 # print("Best solution,", best_solution)
     # print("Best solution inside {}".format(best_solution))
     # drawGantt(best_solution, data)
-    return getScoreHeuristic(best_solution)[0] #best_solution, getScoreHeuristic(best_solution)
+    return best_solution, getScoreHeuristic(best_solution)[0]
 
 def drawHeuristic(res : list[Job], data : list[Job], block= True):
     # print(res)
@@ -304,7 +316,8 @@ def geneticAlgorithm(data: list[Job], pop_size= 50):
     
     best_score_history = list()
     best_score = -1e9
-    for i in range(100):
+    best_res = []
+    for i in range(1000):
         agents = evaluate(agents)
         agents, (best_agent_res, best_agent, realisable) = select(agents)
         agents = crossover(agents)
@@ -315,9 +328,10 @@ def geneticAlgorithm(data: list[Job], pop_size= 50):
         agents = agents[:pop_size]
         if (best_score < best_agent):
             best_score = best_agent
+            best_res = best_agent_res
             print("Best score: {} GEN {}".format(best_score, i+1))
         best_score_history.append((best_score, i))
-    return best_score
+    return best_res, best_score
     # drawHeuristic(best_agent_res, data, block= False)
     # plt.figure()
     # plt.plot(range(len(best_score_history)), best_score_history)
@@ -328,9 +342,9 @@ def simulate(number_of_runs= 100, number_of_jobs= 5):
     for i in range(number_of_runs):
         print("Iter {}".format(i))
         data = generate_data(number_of_jobs) # make sure that this data is constant
-        bres, (bscore, _) = branchAndBound(data)
+        bres, bscore = branchAndBound(data)
         sres, sscore = schedule(data)
-        _, h_score = heurisitc([], data)
+        hres, h_score = heurisitc([], data)
         h.append((sscore, bscore, h_score[0]))
         if (bscore < sscore):
             raise ValueError("Heuristic is worse")
@@ -350,12 +364,25 @@ def simulate(number_of_runs= 100, number_of_jobs= 5):
     plt.show()
 
 def run(number_of_jobs= 5):
+    from functools import partial
+    bb = partial(branchAndBound, v= True)
+    hh = partial(heurisitc, sol= [])
     data = generate_data(number_of_jobs)
-    bres, (bscore, _) = branchAndBound(data, v= True)
-    sres, sscore = schedule(data)
-    print("Schedule score: {}, b&b: {}".format(sscore, bscore))
-    drawGantt(sres, data, block= False)
-    drawHeuristic(bres, data)
+    m = ['EED', 'Branch&Bound', 'Genetic Algorithm', 'Ant colony optimization', 'Heuristic', 'exit']
+    f = [schedule, bb, geneticAlgorithm, antsFormation, hh]
+    r = 0
+    while r != len(m)-1:    
+        for i, req in enumerate(m):
+            print(f"{i}. {req}")
+        r = int(input())
+        if (r == len(m)-1):
+            break
+        res, score = f[r](data= data)
+        print(f"Score: {score}")
+        if (r == 0):
+            drawGantt(res, data, block= False)
+        else:
+            drawHeuristic(res, data, block= False)
 
 def responseTimeBenchmark():
     # heuristic time ms
@@ -375,8 +402,8 @@ def responseTimeBenchmark():
 def antsFormation(data: list[Job]):
     PH_MIN = 0.1
     PH_MAX = 10
-    ALPHA = 1
-    BETA = 1
+    ALPHA = 1 # pheromone
+    BETA = 0.5
     ANTS = 50
     ITER_MAX = 200
 
@@ -443,7 +470,7 @@ def antsFormation(data: list[Job]):
             # print("add")
             ids = [j.id for j in ant]
             for i in range(1, len(ids)):
-                pheromone[ids[i-1]][ids[i]] += 10/(abs(getScoreHeuristic(ant)[0])**2 + 1e-3)
+                pheromone[ids[i-1]][ids[i]] += 1/(abs(getScoreHeuristic(ant)[0]) + 1e-20)
                 # from i to j has not the same effect as from j to i, you should not be adding it.
                 # pheromone[ids[i]][ids[i-1]] += 1/(abs(getScoreHeuristic(ant)[0]) + 1e-9)
                 # print("adding ", 1/(abs(getScoreHeuristic(ant)[0] + 1)))
@@ -462,6 +489,7 @@ def antsFormation(data: list[Job]):
         return pheromone
     
     best_fitness = -1e9
+    best_ant = []
     fitness_history = list()
     for i in range(ITER_MAX):
         ants = [[random.choice(data)] for _ in range(ANTS)]
@@ -480,14 +508,16 @@ def antsFormation(data: list[Job]):
         # draw gantt of the best solution
 
         fitness = [getScoreHeuristic(ant)[0] for ant in ants]
+        ant_idx = np.argmax(fitness)
         if not any([getScoreHeuristic(ant)[1] for ant in ants]):
             raise ValueError("Ants providing an imaginary solution.")
         if (best_fitness < max(fitness)):
             best_fitness = max(max(fitness), best_fitness)
+            best_ant = ants[ant_idx]
             print("Ants found : {} ITER {}".format(best_fitness, i+1))
         fitness_history.append((sum(fitness)/len(fitness), i))
-    best_solution = max(ants, key= lambda ant : getScoreHeuristic(ant)[0])
-    print(f"ANTS best sol : {best_solution} Score : {getScoreHeuristic(best_solution)} Data : {data}")
+    # best_solution = max(ants, key= lambda ant : getScoreHeuristic(ant)[0])
+    # print(f"ANTS best sol : {best_solution} Score : {getScoreHeuristic(best_solution)} Data : {data}")
     # drawHeuristic(best_solution, data)
     # print([ant[0] for ant in ants])
     # for ph in pheromone:
@@ -495,28 +525,35 @@ def antsFormation(data: list[Job]):
     # plt.figure()
     # plt.plot(list(range(len(fitness_history))), [x[0] for x in fitness_history])
     # plt.show()
-    return best_fitness
+    return best_ant, best_fitness
 
 def antsTuning():
     """This function will evaluate ants score vs genetic score"""
     ants_score = list()
     genetic_score = list()
+    h_score = list()
     # bb_score = list()
     for i in range(20):
-        data = generate_data(10)
-        ant, gene = antsFormation(data), geneticAlgorithm(data)
+        data = generate_data(8, static= False)
+        ant, gene, h = antsFormation(data), geneticAlgorithm(data), heurisitc([], data)[1][0]
         ants_score.append((ant, i))
         genetic_score.append((gene, i))
+        h_score.append((h, i))
         # bb_score.append((bb, i))
     # ants_score = [(ants_score[i-1][0], ants_score[i-1][1]) for i in range(1, len(ants_score)) for _ in range(ants_score[i][1]-ants_score[i-1][1])]
     # ants_score += [(ants_score[-1][0], 1000)]
     # for i in range(len(bb_score)):
     #     print(f"B&B {bb_score[i][0]} GEN {genetic_score[i][0]} ANT {ants_score[i][0]}")
     plt.figure(figsize=(10, 10))
-    # plt.plot([t[1] for t in bb_score], [t[0] for t in bb_score], linewidth = 4)
+    plt.subplot(2, 1, 1)
     plt.plot([t[1] for t in ants_score], [t[0] for t in ants_score])
     plt.plot([t[1] for t in genetic_score], [t[0] for t in genetic_score])
     plt.legend(['ANTS score', 'GENETIC score'])
+    
+    plt.subplot(2, 1, 2)
+    plt.plot([t[1] for t in ants_score], [t[0] for t in ants_score])
+    plt.plot([t[1] for t in h_score], [t[0] for t in h_score])
+    plt.legend(['ANTS score', 'HEURISTIC score'])
     plt.show()
 
 def main():
@@ -575,8 +612,11 @@ def geneticSolution():
     input()
     
 if __name__ == '__main__' :
-    # main()
+    main()
     # data = generate_data(5)
     # antsFormation(data)
     # geneticAlgorithm(data)
-    antsTuning()
+
+    # comapre aco genetic heuristic
+    # antsTuning()
+    # print(antsFormation(generate_data(20, p= False, static= True)))
