@@ -34,3 +34,15 @@ Upon running singlemachine.py file you will be greeted with a list of choices ei
 **Simulation**
 As you can see here, the B&B score is worse or equal to the heuristic score and better or equal than the EDD score, which is expected.
 ![](readme_images/simulation_output.png)
+
+## Meta-heuristic approach
+
+### Genetic Algorithm (GA)
+We adapted and improved the implementation of genetic algorithm for this problem. For instance, each agent has a solution which is a specific order of jobs. Then, first 20% of the best agents were served to develop offsprings. The algorithm is fast for large number of jobs and gives optimal solution for data that is tested with the branch&bound approach.
+But to compare this approach we thought it is wise to implement another meta-heuristic approach which was the ant colony optimization.
+
+### Ant Colony Optmization (ACO)
+Following the basic implementation of the ACO algorithm we have made some heavy adjustments to suit this problem and to perform well. One of the major changes that we had to make is that the ant is able to append jobs either at the beginning or at the end of the solution. This change have led to a better convergence.
+
+## Conclusion
+At a smaller number of jobs, branch&bound approach yields an optimal solution at a reasnable time but when it comes to much higher number of jobs, branch&bound suffers and wouldn't be suitable for real world cases. To overcome this, we could think of a better heuristic which in turn will enhance branch&bound and make it more efficient. Meta-heuristic approaches handle this with no significant performance drop. Even though the ACO is not well tuned, it sometimes yields a better solution compared to the genetic algorithm's solution but genetic algorithm is significantly faster than the ACO.
